@@ -165,6 +165,31 @@ rsync -a --sparse /data/vms/win11/{win11.qcow2,tpm,ovmf} backup:/
 Snapshots are **not** backups: they live inside the same qcow2, so a bad disk takes
 both. Back up the files.
 
+### What happens on host poweroff
+
+The guest is **shut down**, never hibernated. `win11.service` carries
+`Conflicts=shutdown.target` / `Before=shutdown.target`, so a host poweroff stops it
+and runs `ExecStop`, which sends `guest-shutdown` over QGA (not ACPI) and then waits
+up to 170 s for the QEMU pid to disappear.
+
+Measured on a real host poweroff: `logind: The system will power off now!` at
+01:28:56 → unit `Deactivated` at 01:28:59 (**3 s**); the guest logged `1074` power-off
+by `wininit.exe` on behalf of `NT AUTHORITY\SYSTEM` plus `6006` — and **no `41`**, no
+`42`.
+
+Two deliberate choices make this work:
+
+- **QGA, not the ACPI power button.** Modern Windows maps `system_powerdown` to
+  *sleep* — and this guest has S1/S2/S3/S0ix all unavailable, so an ACPI power event
+  would hang or blank rather than shut down.
+- **Fast Startup stays off** (`HiberbootEnabled=0`); otherwise "shutdown" is really
+  half-hibernate and the disk state lies.
+
+The one degradation: if Windows does not finish within 170 s (installing an update,
+an app blocking shutdown) **or if QGA is dead**, systemd SIGTERMs and then SIGKILLs
+QEMU after the 3-minute stop timeout — that is a power cut (guest logs `41` next
+boot), still not hibernation.
+
 ## Repository conventions
 
 Tracked: documents, scripts, the systemd unit, boot config, and the whole Guacamole

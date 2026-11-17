@@ -218,6 +218,33 @@ sudo systemctl enable win11
 
 启动后约 20–40 秒 Windows 引导完成，RDP 即可连接。
 
+### 宿主关机时虚机怎么处理
+
+**是正常关机，不是休眠。** `win11.service` 带 `Conflicts=shutdown.target` /
+`Before=shutdown.target`，宿主断电会让它先停：`ExecStop` 经 QGA 发 `guest-shutdown`
+（不是 ACPI 电源键），然后轮询 `qemu.pid` 最多 170 秒，等 QEMU 真正退出。
+
+实测（11-17 01:28 真实宿主关机）：
+
+```
+01:28:56  systemd-logind: The system will power off now!  →  Stopping win11.service
+01:28:59  win11.service: Deactivated successfully          （3 秒）
+01:29:07  宿主断电
+客机侧：1074「关闭电源」（wininit.exe，on behalf of NT AUTHORITY\SYSTEM）+ 6006，无 41、无 42
+```
+
+两个刻意的选择：
+
+- **用 QGA 而不是 ACPI 电源键**。现代 Windows 把 `system_powerdown` 映射成**睡眠**，
+  而本客机 S1/S2/S3/S0ix 全部不可用（固件不支持 + 显卡禁用），走 ACPI 只会黑屏卡住。
+- **快速启动保持关闭**（`HiberbootEnabled=0`）。否则"关机"实为半休眠，磁盘状态会对宿主撒谎。
+
+唯一的退化路径：Windows 170 秒内没关完（在装更新、有程序阻止关机）**或 QGA 挂了**，
+`ExecStop` 超时后 systemd 会 SIGTERM 再 SIGKILL QEMU —— 那是拔电源（下次启动客机记 41），
+仍然不是休眠。
+
+判断依据：`bin/check-shutdown-events.py` 应看到 1074 + 6006，**不应看到 41**。
+
 ### 访问方式
 
 ```bash
