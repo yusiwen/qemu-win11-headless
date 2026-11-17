@@ -3,7 +3,7 @@
 #   BOOT=d start-vm.sh   # first boots: installer CD first
 #   BOOT=c start-vm.sh   # afterwards: disk first
 # Normally started through systemd (win11.service), which supplies BOOT from
-# /data/vms/win11/vm.conf. Every flag below is load-bearing - see README.md.
+# /data/vms/win11/vm.conf. Every flag below is load-bearing - see README-zh_cn.md.
 set -eu
 
 VM=win11

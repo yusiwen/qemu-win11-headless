@@ -1,6 +1,6 @@
 [Unit]
 Description=Windows 11 VM (QEMU/KVM, headless)
-Documentation=file:/data/vms/win11/README.md
+Documentation=file:/data/vms/win11/README.md file:/data/vms/win11/README-zh_cn.md
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0

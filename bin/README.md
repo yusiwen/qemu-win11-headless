@@ -169,7 +169,7 @@ PrincipalSource / PasswordLastSet、以及 RDP-Tcp 的 securitylayer/usrauth。
 
 | 脚本 | 作用 |
 |---|---|
-| `start-vm.sh` | 起 swtpm → 起 QEMU（`-daemonize`）→ 经 QMP 设 VNC 密码。每个参数为什么在那，见 `../README.md` §4 |
+| `start-vm.sh` | 起 swtpm → 起 QEMU（`-daemonize`）→ 经 QMP 设 VNC 密码。每个参数为什么在那，见 `../README-zh_cn.md` §4 |
 | `boot-from-cd.sh` | 从安装盘引导并**代按空格**。Windows 的 "Press any key to boot from CD" 只等 5 秒，headless 必踩 |
 
 ## 一组对照实验的方法（可复用）
@@ -203,4 +203,4 @@ PrincipalSource / PasswordLastSet、以及 RDP-Tcp 的 securitylayer/usrauth。
 
 为什么值得写成脚本：功能更新会把刻意关掉的开关又打开（实测 `HiberbootEnabled` 从 0 变回 1），
 而 RDP 能不能用、微软账户密码还能不能登录，取决于两个注册表值有没有被重写。
-靠肉眼看"能连上了"不够，得逐个值核。用法见 `../README.md` §7.12。
+靠肉眼看"能连上了"不够，得逐个值核。用法见 `../README-zh_cn.md` §7.12。
