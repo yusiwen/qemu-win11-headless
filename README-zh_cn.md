@@ -23,7 +23,7 @@
 | 基线快照 `clean-install` | ✅ 完成 |
 | 宿主开机自启 | ✅ `systemctl is-enabled win11` = enabled |
 | `post-setup` 快照 | ✅ 完成（ID 2，RDP 可用态，日常回滚用这个） |
-| 网页访问（Guacamole） | ✅ 部署完成，`http://192.168.2.48:8081/guacamole/`；链路验证到 NLA 认证阶段，最后一步需你的 Windows 密码（见 `guacamole/README.md`） |
+| 网页访问（Guacamole） | ✅ 部署完成，`http://192.168.2.48:8081/guacamole/`；链路验证到 NLA 认证阶段，最后一步需你的 Windows 密码（见 `guacamole/README-zh_cn.md`） |
 
 ---
 
@@ -277,7 +277,7 @@ http://192.168.2.48:8081/guacamole/     用户 guacadmin，密码在 guacamole/.
 比原生 RDP 强的地方：任何有浏览器的设备都能用，而且换设备不用配隧道。
 
 **Win11 专业版只有 1 个交互式会话**：浏览器连上会把你正在用的 Windows App 会话踢掉，
-反之亦然。完整说明、部署细节、自检方法和 6 个真坑见 `guacamole/README.md`。
+反之亦然。完整说明、部署细节、自检方法和 6 个真坑见 `guacamole/README-zh_cn.md`。
 
 客机内部拿到的是 SLIRP 私有地址（10.0.2.15），网关 10.0.2.2，DNS 由 QEMU 转发 —— 客机不需要也不应该配静态 IP。
 
@@ -577,7 +577,7 @@ UTC、C 盘剩余，并列出最近 12 小时的 1074/6005/6006/6008/41 事件�
 
 | 路径 | 说明 |
 |---|---|
-| `README.md` `README-zh_cn.md` `bin/README.md` `guacamole/README.md` | 四份文档（顶层英文，其余中文） |
+| `README.md` `README-zh_cn.md`、`bin/README.md` `bin/README-zh_cn.md`、`guacamole/README.md` `guacamole/README-zh_cn.md` | 六份文档：每份英文主文档配一份 `-zh_cn` 中文版 |
 | `bin/*.py` `bin/*.sh` `bin/*.ps1` | 运维脚本（QMP/QGA/协议探针/取证） |
 | `win11.service` `vm.conf` | systemd unit 与启动参数（`BOOT`） |
 | `guacamole/docker-compose.yml` `docker-compose.tls.yml` `Caddyfile` `guacamole.properties` `.env.example` | 网页网关的全部定义 |
@@ -619,7 +619,7 @@ cd guacamole && ./bootstrap.sh     # 缺 .env 会提示先生成
 | 2026-11-17 | **客机再次升级 25H2 → 26H2**（`26200.9974` → `26300.9974`，12:05 重启）。复查全部干净：三个挂起重启标记均为 False（比 25H2 那次干净）、`fDenyTSConnections=0`、`DevicePasswordLessBuildVersion=0`、**`HiberbootEnabled=0`（上次改的快速启动在第二次功能更新中保住了）**、时区与 UTC 正常（差 1 秒）、C: 剩余 48.6 GB。锁屏停在 PIN 输入（控制台登录用，RDP 仍用密码） |
 | 2026-11-17 | 网页会话超时从默认 60 分钟改为 **720 分钟**（`guacamole.properties` 的 `api-session-timeout`，挂进 `/etc/guacamole/`），启动日志确认生效。同时查明 11:52 的那次掉线是 **docker 守护进程重启**（apt 升级 docker/containerd 导致），不是超时——容器被 `unless-stopped` 自动拉起但会话全丢 |
 | 2026-11-17 | **客机升级 23H2 → 25H2**（`22631.6199` → `26200.9974`），Windows Update 触发重启，RDP 中断约 2 分钟后自行恢复。复查结果：RDP 开关、Hello 无密码设置、时区、qemu-ga 均未被重置；**快速启动被重新打开（`HiberbootEnabled=1`）已改回 0**；CBS 仍标记挂起重启。新增 `bin/check-update-state.py`，新增 §7.12 复查清单 |
-| 2026-11-17 | **加网页访问**：Apache Guacamole 1.6.0 三容器（guacd/postgres/guacamole）跑在 docker 上，`8081` 出网页，连接 `win11-rdp` 指向 `host.docker.internal:13389`（RDP/NLA）。虚机零改动。链路用自写的 `guac-probe.py`（Guacamole 协议级）验证到 NLA 认证阶段。踩坑：`umask 077` 连带把 `initdb.sql` 变成 0600 导致 postgres 读不到（库表没建）；guacd 的 `ready` 早于认证结果（假成功）；协议里带参数的是 `connect` 而不是 `select`。文档在 `guacamole/README.md` |
+| 2026-11-17 | **加网页访问**：Apache Guacamole 1.6.0 三容器（guacd/postgres/guacamole）跑在 docker 上，`8081` 出网页，连接 `win11-rdp` 指向 `host.docker.internal:13389`（RDP/NLA）。虚机零改动。链路用自写的 `guac-probe.py`（Guacamole 协议级）验证到 NLA 认证阶段。踩坑：`umask 077` 连带把 `initdb.sql` 变成 0600 导致 postgres 读不到（库表没建）；guacd 的 `ready` 早于认证结果（假成功）；协议里带参数的是 `connect` 而不是 `select`。文档在 `guacamole/README-zh_cn.md` |
 | 2026-11-17 | RDP 转发改为 `0.0.0.0:13389`，局域网可直连 `192.168.2.48:13389`（回环/隧道方式同时保留）。踩坑：把注释写在反斜杠续行中间，续行吞掉注释导致后续参数（`-vnc`/`-qmp`）全部丢失，QEMU 报 `gtk initialization failed` |
 | 2026-11-17 | 建 `post-setup` 快照（ID 2，01:07:03）。实测快照自身成本 0.1 GiB 元数据，disk size 27.8 → 27.9 GiB。建完重启验证：services active/enabled、guest-ping 通、RDP 应答 NLA、客机 UTC 与宿主差 1 秒 |
 | 2026-11-17 | **RDP 打通**：根因是 Win11 默认的 Hello 无密码模式让本地没有密码验证器（`0xC000006A`）；关闭 `DevicePasswordLessBuildVersion` 并密码登录一次后成功，用户名用微软账户邮箱。新增 `verify-rdp-works.py` 核实 |
