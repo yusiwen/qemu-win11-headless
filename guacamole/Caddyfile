@@ -1,0 +1,23 @@
+# Caddy in front of Guacamole. "tls internal" issues a cert from Caddy's own
+# local CA - no external ACME, which matters because 192.168.2.48 is a private
+# address and cannot be validated publicly.
+#
+# To use your own certificate instead, drop cert.pem/key.pem next to this file
+# and replace the tls line with:   tls /etc/caddy/cert.pem /etc/caddy/key.pem
+{
+	admin off
+}
+
+https://:8443 {
+	tls internal
+	encode zstd gzip
+	reverse_proxy guacamole:8080 {
+		# Guacamole keeps a long-lived websocket open for the session stream;
+		# buffering it would add latency and break the tunnel.
+		flush_interval -1
+	}
+	log {
+		output stderr
+		format console
+	}
+}

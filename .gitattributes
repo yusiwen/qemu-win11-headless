@@ -1,0 +1,13 @@
+# 脚本都在 Linux 上跑；从 macOS 编辑也不能把 CRLF 带进来
+* text=auto eol=lf
+*.sh  text eol=lf
+*.py  text eol=lf
+*.md  text
+# .ps1 只被 guest-ps.py 以 base64 送进客机，行尾无所谓，统一 LF
+*.ps1 text eol=lf
+
+# 显式声明二进制（正常都被 .gitignore 挡住，写出来防误加）
+*.qcow2   binary
+*.fd      binary
+*.permall binary
+*.png     binary

@@ -1,0 +1,31 @@
+[Unit]
+Description=Windows 11 VM (QEMU/KVM, headless)
+Documentation=file:/data/vms/win11/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=forking
+PIDFile=/data/vms/win11/qemu.pid
+User=yusiwen
+Group=yusiwen
+SupplementaryGroups=kvm
+EnvironmentFile=-/data/vms/win11/vm.conf
+ExecStart=/data/vms/win11/bin/start-vm.sh
+# Graceful guest shutdown through the QEMU guest agent (needs virtio-win guest tools).
+# Without qemu-ga the request fails and systemd eventually SIGTERMs QEMU.
+# Ask the guest agent to power the guest down, then WAIT for QEMU to exit. Without
+# the wait, systemd sends SIGTERM to QEMU the moment ExecStop returns and yanks a
+# shutdown that is still in progress (harmless on a fresh install, corrupting when
+# Windows Update is mid-flight).
+ExecStop=/bin/sh -c '/usr/bin/python3 /data/vms/win11/bin/qga.py /data/vms/win11/qga.sock guest-shutdown >/dev/null 2>&1 || true; p=$(cat /data/vms/win11/qemu.pid 2>/dev/null) || exit 0; [ -n "$p" ] || exit 0; i=0; while [ $i -lt 170 ]; do kill -0 "$p" 2>/dev/null || exit 0; i=$((i+1)); sleep 1; done; exit 0'
+ExecStopPost=-/bin/sh -c 'if [ -f /data/vms/win11/tpm/swtpm.pid ]; then kill "$(cat /data/vms/win11/tpm/swtpm.pid)" 2>/dev/null; rm -f /data/vms/win11/tpm/swtpm.pid; fi; true'
+TimeoutStopSec=180
+TimeoutStartSec=120
+Restart=no
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
