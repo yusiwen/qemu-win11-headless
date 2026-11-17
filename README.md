@@ -208,3 +208,7 @@ Every document is English with a `-zh_cn` Chinese counterpart.
 - **[bin/README.md](bin/README.md)** — what each script does and the experiments behind it · [中文](bin/README-zh_cn.md)
 - **[guacamole/README.md](guacamole/README.md)** — the browser gateway in depth · [中文](guacamole/README-zh_cn.md)
 - **[README-zh_cn.md](README-zh_cn.md)** — the full Chinese manual: every QEMU flag, the install walkthrough, 12 troubleshooting sections, complete change log
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, ship it; just keep the copyright notice.

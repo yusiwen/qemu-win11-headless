@@ -627,3 +627,9 @@ cd guacamole && ./bootstrap.sh     # 缺 .env 会提示先生成
 | 2026-11-17 | 补 QGA 通道（virtio-serial），新增 `qga.py`；`ExecStop` 改为「发 guest-shutdown 后等 QEMU 退出」，关机被验证为干净（1074+6006，无 Kernel-Power 41）。`BOOT=c`，建 `clean-install` 快照，`enable` 开机自启 |
 | 2026-11-16 | VNC 启用认证（`password=on` + QMP `change-vnc-password`）：原来只提供安全类型 None，macOS 屏幕共享拒连。密码存 `vnc.pass` |
 | 2026-11-16 | 首次部署：宿主装包、建 120G qcow2、OVMF/TPM 就位、写开始脚本与 systemd unit、AppArmor 放行、从光盘引导成功（截图确认 Windows 安装程序语言界面） |
+
+---
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。随便用、随便改、随便分发，保留版权声明即可。
