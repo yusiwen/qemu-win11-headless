@@ -4,7 +4,7 @@
 "打开浏览器就能用"的远程桌面。**虚机本身一行没改**：不装 agent、不改注册表、
 不动 QEMU 启动参数，Guacamole 只是主动去连虚机已经在监听的 RDP。
 
-- 网页入口：`http://192.168.2.48:8081/guacamole/`
+- 网页入口：`https://192.168.2.48:8443/guacamole/`
 - 登录用户：`guacadmin`，密码在 `.env` 的 `ADMIN_PASSWORD`（已从出厂默认值改掉）
 - 连接名：`win11-rdp`；Windows 密码**不存盘**，每次连接时在浏览器里输入
 
@@ -16,7 +16,10 @@
 
 ```
 你的浏览器（Mac / 手机 / 任何设备）
-   │  HTTP :8081                       ← 只有这一段是"网页"
+   │  HTTPS :8443                      ← TLS 不是装饰,剪贴板靠它(§7)
+   ▼
+caddy 容器（TLS 终结，本地 CA）
+   │  HTTP :8080（只发布在回环;guacd 走 docker 网络连它）
    ▼
 guacamole 容器（Tomcat + 认证 + 会话）
    │  Guacamole 协议 :4822（容器内网，不对外）
@@ -47,8 +50,9 @@ host.docker.internal:13389 = 172.17.0.1:13389   ← QEMU hostfwd
 ```
 /data/vms/win11/guacamole/
 ├── docker-compose.yml        # 三容器：guacd / postgres / guacamole
-├── docker-compose.tls.yml    # 可选：Caddy + 自签 TLS（§7）
-├── Caddyfile                 # 可选：Caddy 反代配置
+├── docker-compose.tls.yml    # Caddy TLS 前端,属于正常部署栈（§7）
+├── Caddyfile                 # TLS 配置。两个 SNI 坑在注释里（§7.2）
+├── caddy-data/               # Caddy 存储：根/中间 CA 与已签发证书。删了就等于换 CA（§7.1）
 ├── .env                      # 600。DB 密码、管理员密码、RDP 目标、端口
 ├── .env.example              # 模板（可进版本库）
 ├── initdb.sql                # 24 KB，库表结构。**入库**，文件头记录来源镜像 tag
@@ -70,7 +74,7 @@ cd /data/vms/win11/guacamole
 
 # 1) 生成 .env（密码只在宿主机生成，不要复制粘贴到任何地方）
 umask 077
-printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<微软账户邮箱>\n' \
+printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=127.0.0.1:8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<微软账户邮箱>\n' \
   "$(openssl rand -hex 16)" "$(openssl rand -hex 16)" > .env
 chmod 600 .env
 
@@ -80,13 +84,13 @@ chmod 600 .env
 # chmod 644 initdb.sql        # ← 见 §9 坑 1，权限不对 postgres 读不到
 
 # 3) 起三个容器
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 
 # 4) 轮换管理员密码 + 建连接
 ./bin/guac-setup.py
 
 # 5) 自检
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/guacamole/   # 期望 200
+curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/   # 期望 200
 ./bin/guac-probe.py                                                         # 见 §5
 ```
 
@@ -95,7 +99,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/guacamole/   # �
 
 ## 4. 日常使用
 
-浏览器打开 `http://192.168.2.48:8081/guacamole/`，用 `guacadmin` + `.env` 里的
+浏览器打开 `https://192.168.2.48:8443/guacamole/`，用 `guacadmin` + `.env` 里的
 `ADMIN_PASSWORD` 登录，点 `win11-rdp`，在提示里输入 **微软账户密码**
 （用户名已预填 `<微软账户邮箱>`，不要加 `MicrosoftAccount\` 前缀）。
 
@@ -207,28 +211,74 @@ docker compose down / up -d            # 全停 / 全起
 - **升级**：把两处 `1.6.0` 改成新 tag，`docker compose pull && up -d`。跨大版本时
   确认库表是否需要迁移（官方有 upgrade 脚本）。
 
-## 7. 可选：给网页加 TLS
+## 7. TLS：默认开，因为剪贴板靠它
 
-`docker-compose.tls.yml` + `Caddyfile` 已经准备好，一条命令能切：
+网页现在走 **HTTPS 8443**，Caddy 在前面终结 TLS。`docker-compose.tls.yml` + `Caddyfile`
+已经是正常部署的一部分：`docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d`，
+`.env` 里 `WEB_PORT=127.0.0.1:8081`，明文 HTTP 只留在回环上。
+
+**三个理由，按实际杀伤力排序：**
+
+1. **剪贴板。** 浏览器把 Async Clipboard API 卡在"安全上下文"后面。这套部署实测：
+   `http://192.168.2.48:8081` 里 `isSecureContext: false`、`navigator.clipboard === undefined`，
+   于是 Guacamole 的双向剪贴板完全失效——从客机往外复制、往客机里粘贴，两个方向都
+   悄无声息地什么也不做。换成 `https://192.168.2.48:8443` 后同一个页面
+   `isSecureContext: true`，`readText`/`writeText`/`addEventListener` 全在。
+   **TLS 从"可选"变成"必须"，就是为了这个。**
+2. 微软账户密码不再明文过局域网。
+3. 没有第三点了——RDP 那一段加不加 TLS 都一个样。
+
+### 7.1 证书
+
+`tls internal` 用 Caddy 自己的本地 CA 签发：`192.168.2.48` 是内网地址，ACME 不可能验证。
+浏览器第一次会警告；把根证书导进去就彻底消警：
 
 ```bash
-cd /data/vms/win11/guacamole
-sed -i 's/^WEB_PORT=.*/WEB_PORT=127.0.0.1:8081/' .env       # 网页退回回环
-docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
-# 访问 https://192.168.2.48:8443/guacamole/
+docker exec win11-guac-tls cat /data/caddy/pki/authorities/local/root.crt > nuc12-caddy-root.crt
+# macOS：双击这个文件导入，或者
+sudo security add-trusted-cert -d -r trustRoot \
+     -k /Library/Keychains/System.keychain nuc12-caddy-root.crt
 ```
 
-证书用 Caddy 的本地 CA（`tls internal`）——`192.168.2.48` 是内网地址，拿不到
-公共证书，所以不用 ACME。浏览器第一次会警告；想消掉就把 Caddy 的根证书导进系统：
+信任之前先确认链是完整的（期望 `TLS: 0`）：
 
 ```bash
-docker exec win11-guac-tls cat /data/caddy/pki/authorities/local/root.crt > caddy-local-root.crt
-# macOS：钥匙串访问 → 系统 → 导入 → 始终信任
+curl -s -o /dev/null -w 'HTTP %{http_code}  TLS %{ssl_verify_result}\n' \
+     --cacert nuc12-caddy-root.crt https://192.168.2.48:8443/guacamole/
 ```
 
-**为什么要加这一层**：现在走的是明文 HTTP，你在浏览器里输入的微软账户密码在
-局域网里是明文传输的。家庭内网风险不高，但同网段任何一台被感染的设备都能嗅探。
-浏览器直连 `192.168.2.48:13389` 反而没这个顾虑 —— RDP 本身有 TLS + NLA。
+当前根证书：`CN=Caddy Local Authority - 2026 ECC Root`，SHA-256
+`E6:34:42:ED:A3:EA:65:9B:96:D5:D0:1C:E5:84:56:B5:0A:B4:91:53:04:97:BD:21:5B:74:5D:2C:56:BA:76:65`。
+它存在 `./caddy-data/` 里，删掉这个目录就等于换了 CA，所有客户端都要重新信任一次。
+
+### 7.2 两个 SNI 坑，同一条毫无信息量的报错
+
+两者的表现完全一样：**浏览器什么都不说，curl 只报
+`TLSv1.3 (IN), TLS alert, internal error (592)` / `error:0A000438`**，Caddy 默认日志级别下
+一个字都不记。要在全局块里加 `debug` 才能看到真正原因。
+
+| 现象 | 原因 | 修法 |
+|---|---|---|
+| 日志里 `certificate obtained successfully` 成功，但每次握手都是 `no certificate matching TLS ClientHello` | TLS 客户端对 **IP 字面量不发 SNI**（RFC 6066 禁止把 IP 放进 `server_name`），Caddy 没有名字可匹配 | 全局块加 `default_sni 192.168.2.48` |
+| 同样的报错，且 CA 压根没签发证书 | 站点地址写成了裸的 `https://:8443`，没有可签发的名字 | 写成 `https://192.168.2.48:8443` |
+
+本目录的 `Caddyfile` 两个修法都带，并且把推理写在注释里。别"简化"回 `:8443`，也别
+在那个 site 块里加第二个主机名而不设 `default_sni`——那会多签一张证书，然后不带 SNI 的
+IP 握手就什么也匹配不上。
+
+### 7.3 结果
+
+```
+$ curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/
+200
+$ echo | openssl s_client -connect 192.168.2.48:8443 2>/dev/null | openssl x509 -noout -subject -issuer -ext subjectAltName
+issuer=CN = Caddy Local Authority - ECC Intermediate
+X509v3 Subject Alternative Name: critical
+    IP Address:192.168.2.48
+$ # 浏览器打开同一地址：
+{ "isSecureContext": true, "clipboard": "object", "readText": true, "writeText": true }
+```
+
 
 ## 8. 收紧：让 RDP 只对 guacd 可见
 
@@ -299,7 +349,13 @@ psql: error: .../01-initdb.sql: Permission denied
 `systemctl show docker -p ActiveEnterTimestamp` 的时间戳和容器 `StartedAt` 几乎一致 === 是守护进程重启，
 不是会话超时。2026-11-17 11:52 就撞过一次（用户自己 apt 操作触发）。
 
-**坑 9：`api-session-timeout` 改了没生效，先看挂载。**
+**坑 9："剪贴板不工作"几乎从来不是 Guacamole 的配置问题。**
+在动 `disable-copy` / `disable-paste`（默认都是 false）之前，先看访问源：
+`isSecureContext` 必须是 `true`。走明文 HTTP 时它是 `false`，`navigator.clipboard` 根本不存在，
+剪贴板两个方向都悄无声息地失效。一分钟定案的证据链：连接参数里没有任何剪贴板相关键、
+客机 `rdpclip.exe` 在跑、页面走的是 HTTP。最后那条就是元凶，见 §7。
+
+**坑 10：`api-session-timeout` 改了没生效，先看挂载。**
 `GUACAMOLE_HOME=/etc/guacamole` 是镜像自带的，但容器里原来没有 `guacamole.properties`，
 文件必须**挂进去**（`./guacamole.properties:/etc/guacamole/guacamole.properties:ro`）。
 验证只看一行启动日志里的分钟数，别看网页是否还开着。
@@ -333,7 +389,7 @@ RustDesk 是 TeamViewer 那类替代品，不是 RDP 网关。
 | 参数 | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, color-depth=32 |
 | guacd 协商 | `Security mode: NLA`、`Resize method: display-update`、`args` 报 `VERSION_1_5_0` |
 | 认证 | 空密码 → 客机 `Authentication failure (invalid credentials?)`（链路通，等真密码） |
-| 端口 | 8081 网页（0.0.0.0），4822 guacd（仅 127.0.0.1） |
+| 端口 | 8443 HTTPS（0.0.0.0，Caddy）、8081 HTTP（仅 127.0.0.1）、4822 guacd（仅 127.0.0.1） |
 | 会话超时 | 默认 60 分钟 → 改为 **720 分钟**，启动日志确认 `Sessions will expire after 720 minutes of inactivity.` |
 | 资源 | 实测常驻内存：guacamole 313 MiB + postgres 30 MiB + guacd 11 MiB ≈ **354 MiB**（`docker stats --no-stream`） |
 

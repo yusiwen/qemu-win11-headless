@@ -139,7 +139,10 @@ def connection_payload(env):
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     env = read_env(os.path.join(here, "..", ".env"))
-    port = env.get("WEB_PORT", "8081")
+    # WEB_PORT may be a bind address ("127.0.0.1:8081") once the TLS overlay is in
+    # use; the API itself is always reached on the loopback listener, so take the
+    # port only - otherwise the URL comes out as http://127.0.0.1:127.0.0.1:8081
+    port = env.get("WEB_PORT", "8081").rsplit(":", 1)[-1]
     base = "http://127.0.0.1:%s/guacamole/api" % port
     admin = env.get("ADMIN_PASSWORD")
 
@@ -176,7 +179,7 @@ def main():
         cid = body["identifier"]
         print("[2/2] 连接 %s 已创建 (id=%s)" % (CONNECTION_NAME, cid))
 
-    print("\n浏览器: http://192.168.2.48:%s/guacamole/" % port)
+    print("\n浏览器: https://<本机IP>:8443/guacamole/   （明文仅回环 http://127.0.0.1:%s/guacamole/）" % port)
     print("用户:   guacadmin")
     print("密码:   .env 里的 ADMIN_PASSWORD")
     print("连接:   %s  ->  %s:%s (RDP/NLA，密码在连接时询问)"

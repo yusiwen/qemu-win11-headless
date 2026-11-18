@@ -13,7 +13,7 @@ if [ ! -f .env ]; then
 
 生成一份：
   umask 077
-  printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<微软账户邮箱>\n' \
+  printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=127.0.0.1:8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<微软账户邮箱>\n' \
     "$(openssl rand -hex 16)" "$(openssl rand -hex 16)" > .env
   chmod 600 .env
 
@@ -50,10 +50,12 @@ else
     echo "==> initdb.sql 已存在，来源 ${SOURCE}，与 compose 的镜像版本一致"
 fi
 
-echo "==> 启动容器"
-docker compose up -d
+# TLS 前端是正常部署的一部分：剪贴板 API 只在安全上下文里存在（见 README §7）。
+# 明文 HTTP 监听仍留在回环上，供 guac-setup.py / guac-probe.py 和 readiness 检查用。
+echo "==> 启动容器（含 Caddy TLS 前端）"
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 
-echo "==> 等待网页就绪 http://127.0.0.1:${PORT}/guacamole/"
+echo "==> 等待网页就绪 http://127.0.0.1:${PORT}/guacamole/ 与 https://<本机IP>:8443/guacamole/"
 for _ in $(seq 1 60); do
     if curl -sf -o /dev/null "http://127.0.0.1:${PORT}/guacamole/"; then
         echo "    网页已就绪"
@@ -64,6 +66,15 @@ done
 curl -sf -o /dev/null "http://127.0.0.1:${PORT}/guacamole/" \
     || { echo "网页没起来，看 docker compose logs guacamole"; exit 1; }
 
+# Caddy 签证书和起监听都要几秒钟，给它一点时间；失败只警告（明文回环照样能用）
+LAN_IP=$(hostname -I | awk '{print $1}')
+for _ in $(seq 1 15); do
+    curl -skf -o /dev/null "https://${LAN_IP}:8443/guacamole/" && break
+    sleep 2
+done
+curl -skf -o /dev/null "https://${LAN_IP}:8443/guacamole/" \
+    || echo "!! HTTPS 8443 还没通：看 docker logs win11-guac-tls，以及 Caddyfile 的 default_sni" >&2
+
 echo "==> 管理员密码轮换 + 建连接"
 ./bin/guac-setup.py
 
@@ -71,4 +82,5 @@ echo "==> 协议级自检（不带 Windows 密码时会停在认证阶段，属�
 ./bin/guac-probe.py || true
 
 echo
-echo "完成。浏览器打开 http://<本机IP>:${PORT}/guacamole/ ，用户 guacadmin，密码见 .env"
+echo "完成。浏览器打开 https://${LAN_IP}:8443/guacamole/ ，用户 guacadmin，密码见 .env"
+echo "      （明文 HTTP 只在回环：http://127.0.0.1:${PORT}/guacamole/）"

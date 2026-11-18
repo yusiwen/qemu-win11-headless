@@ -23,7 +23,7 @@
 | 基线快照 `clean-install` | ✅ 完成 |
 | 宿主开机自启 | ✅ `systemctl is-enabled win11` = enabled |
 | `post-setup` 快照 | ✅ 完成（ID 2，RDP 可用态，日常回滚用这个） |
-| 网页访问（Guacamole） | ✅ 部署完成，`http://192.168.2.48:8081/guacamole/`；链路验证到 NLA 认证阶段，最后一步需你的 Windows 密码（见 `guacamole/README-zh_cn.md`） |
+| 网页访问（Guacamole） | ✅ 部署完成，`https://192.168.2.48:8443/guacamole/`（Caddy 终结 TLS）；链路验证到 NLA 认证阶段，最后一步需你的 Windows 密码（见 `guacamole/README-zh_cn.md`） |
 
 ---
 
@@ -267,11 +267,15 @@ open vnc://127.0.0.1:5901        # 密码读 /data/vms/win11/vnc.pass
 不想装 Windows App、想用手机或任意电脑的浏览器进来时走这条：
 
 ```
-http://192.168.2.48:8081/guacamole/     用户 guacadmin，密码在 guacamole/.env 的 ADMIN_PASSWORD
+https://192.168.2.48:8443/guacamole/    用户 guacadmin，密码在 guacamole/.env 的 ADMIN_PASSWORD
 ```
 
 登录后点 `win11-rdp`，在提示里输入微软账户密码（连接定义里不留密码）。这条路支持
 动态分辨率、双向剪贴板、文件传输（临时目录）和音频。
+
+**必须走 HTTPS**：浏览器的剪贴板 API 只在"安全上下文"里存在，明文 HTTP 下
+`navigator.clipboard` 是 `undefined`，双向剪贴板会**静默失效**（不报错，就是不工作）。
+这是 TLS 从可选变必须的唯一原因，见 `guacamole/README-zh_cn.md` §7。
 
 比原生 RDP 差一点的地方：多一层服务端转码，1080p 下每次操作多几毫秒延迟。
 比原生 RDP 强的地方：任何有浏览器的设备都能用，而且换设备不用配隧道。
@@ -614,6 +618,7 @@ cd guacamole && ./bootstrap.sh     # 缺 .env 会提示先生成
 
 | 日期 | 变更 |
 |---|---|
+| 2026-11-18 | **修好网页里的剪贴板共享**：根因不是 Guacamole 配置，而是访问地址是明文 HTTP——浏览器只在"安全上下文"里提供 `navigator.clipboard`，实测 `http://192.168.2.48:8081` 里它是 `undefined`，双向剪贴板静默失效。改为 Caddy 终结 TLS（`https://192.168.2.48:8443/guacamole/`，明文 8081 退回回环）。踩坑：Caddy 报 `TLS alert: internal error` 而日志无字——① 站点地址写成 `:8443` 就没有可签发的名字；② **TLS 客户端对 IP 字面量不发 SNI**，需要 `default_sni`。两坑都写进 `Caddyfile` 注释与 `guacamole/README-zh_cn.md` §7.2 |
 | 2026-11-17 | **删掉两个 23H2 过期快照**（`clean-install`、`post-setup`），保留 `post-26h2`。qcow2 **55 → 32 GiB**，`/data` 168G → **146G**；`qemu-img check` 无错误，重启后 guest-ping / RDP / 网页全部正常。实测结论：内部快照会钉住历史簇，删除即可回收，无需重写镜像 |
 | 2026-11-17 | **清理 Windows.old 并回收磁盘**：客机 `C:\Windows.old` 37.61 GB / 390,125 文件（两次功能更新的残留）全部删除，客机已用 70.4 → **40.2 GB**；宿主 qcow2 68.4 → **54.6 GiB**，`/data` 182G → 168G。`rd /s /q` 只清掉 22.1 万文件，余下 16.8 万（TrustedInstaller 属主）靠 takeown+icacls 兜底。TRIM 已开（`DisableDeleteNotify=0`）且 `discard=unmap` 生效。剩余约 14 GB 差值被两个 23H2 内部快照钉住。建 `post-26h2` 快照（ID 3）。新增 `bin/guest-ps.py`（通用 QGA PowerShell 执行器）、`bin/cleanup-windows-old.ps1` |
 | 2026-11-17 | **客机再次升级 25H2 → 26H2**（`26200.9974` → `26300.9974`，12:05 重启）。复查全部干净：三个挂起重启标记均为 False（比 25H2 那次干净）、`fDenyTSConnections=0`、`DevicePasswordLessBuildVersion=0`、**`HiberbootEnabled=0`（上次改的快速启动在第二次功能更新中保住了）**、时区与 UTC 正常（差 1 秒）、C: 剩余 48.6 GB。锁屏停在 PIN 输入（控制台登录用，RDP 仍用密码） |

@@ -1,14 +1,32 @@
-# Caddy in front of Guacamole. "tls internal" issues a cert from Caddy's own
-# local CA - no external ACME, which matters because 192.168.2.48 is a private
-# address and cannot be validated publicly.
+# Caddy in front of Guacamole.
+#
+# Why TLS at all: the browser's Async Clipboard API - which Guacamole uses for
+# clipboard sharing - only exists in a "secure context". Over plain HTTP
+# navigator.clipboard is undefined, so copy/paste between browser and guest
+# silently does nothing. HTTPS is what brings it back.
+#
+# "tls internal" issues the certificate from Caddy's own local CA. No ACME,
+# which could never validate a private address like 192.168.2.48 anyway.
 #
 # To use your own certificate instead, drop cert.pem/key.pem next to this file
 # and replace the tls line with:   tls /etc/caddy/cert.pem /etc/caddy/key.pem
 {
 	admin off
+
+	# Two SNI facts, both of which otherwise surface as the same opaque symptom
+	# ("TLS alert: internal error", with nothing in the log at default verbosity):
+	#
+	#  1. The site address below must name the host explicitly. A bare ":8443"
+	#     gives Caddy no name to issue a certificate for, so the CA produces
+	#     nothing and every handshake dies.
+	#  2. Browsers and curl send NO SNI when the URL is an IP literal (RFC 6066
+	#     forbids an IP in server_name). Caddy then has nothing to match the
+	#     certificate against - "no certificate matching TLS ClientHello" -
+	#     default_sni tells it which name to assume for those handshakes.
+	default_sni 192.168.2.48
 }
 
-https://:8443 {
+https://192.168.2.48:8443 {
 	tls internal
 	encode zstd gzip
 	reverse_proxy guacamole:8080 {

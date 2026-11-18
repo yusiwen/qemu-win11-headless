@@ -1,11 +1,14 @@
 # ── 秘密：绝不入库 ────────────────────────────────────────────────
 # Guacamole 的 postgres 密码与管理员密码
 guacamole/.env
+guacamole/.env.bak*
+# Caddy 的 CA 私钥与已签发证书（删掉它等于换 CA，见 guacamole/README.md §7.1）
+guacamole/caddy-data/
 # QEMU 的 VNC 密码，start-vm.sh 启动后经 QMP 注入
 vnc.pass
 
 # ── 虚机状态与数据：要备份，但属于"数据"不是"配置" ─────────────────
-# 磁盘镜像：虚拟 120 GiB，实际约 32 GiB
+# 磁盘镜像：虚拟 120 GiB，实际约 35 GiB
 *.qcow2
 *.qcow2.*
 # UEFI 变量存储：含启动项和已登记的安全启动证书，由 OVMF_VARS_4M.ms.fd 复制而来
@@ -19,6 +22,8 @@ qemu.pid
 logs/
 screen-*.png
 screen-*.ppm
+__pycache__/
+*.pyc
 
 # ── Guacamole 的运行时数据与生成物 ───────────────────────────────
 # postgres 数据目录（属主 root:70，含用户表与连接定义）
