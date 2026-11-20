@@ -4,7 +4,8 @@
 "打开浏览器就能用"的远程桌面。**虚机本身一行没改**：不装 agent、不改注册表、
 不动 QEMU 启动参数，Guacamole 只是主动去连虚机已经在监听的 RDP。
 
-- 网页入口：`https://vm-win11.example.com/guacamole/`（前置代理 + Authelia）
+- 网页入口：`https://vm-win11.example.com/guacamole/`（前置代理 + Authelia）——
+  本仓库一律用 `example.com` 代指你自己的域名，照抄时替换
 - 局域网：`http://192.168.2.48:8081/guacamole/`（明文，同样没有登录页）
 - 登录用户：`guacadmin`，密码在 `.env` 的 `ADMIN_PASSWORD`（已从出厂默认值改掉）
 - 连接名：`win11-rdp`；Windows 密码**不存盘**，每次连接时在浏览器里输入

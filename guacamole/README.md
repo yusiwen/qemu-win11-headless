@@ -5,7 +5,8 @@ that works from any browser. **The VM itself is untouched**: no agent installed,
 registry change, no QEMU flag altered — Guacamole simply connects to the RDP port the
 guest already listens on.
 
-- Web UI: `https://vm-win11.example.com/guacamole/` (front proxy, Authelia)
+- Web UI: `https://vm-win11.example.com/guacamole/` (front proxy, Authelia) —
+  `example.com` stands in for your own domain throughout this repo; substitute yours
 - On the LAN: `http://192.168.2.48:8081/guacamole/` (plain HTTP, no login form either)
 - Login: `guacadmin`, password in `.env` (`ADMIN_PASSWORD`, rotated off the factory value)
 - Connection: `win11-rdp`; the Windows password is **never stored** — the browser prompts for it every time

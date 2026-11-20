@@ -23,7 +23,7 @@
 | 基线快照 `clean-install` | ✅ 完成 |
 | 宿主开机自启 | ✅ `systemctl is-enabled win11` = enabled |
 | `post-setup` 快照 | ✅ 完成（ID 2，RDP 可用态，日常回滚用这个） |
-| 网页访问（Guacamole） | ✅ 部署完成。外网 `https://vm-win11.example.com/guacamole/`（VPS nginx 终结 TLS + Authelia 双因素），内网 `http://192.168.2.48:8081/guacamole/`。已开 header 认证，浏览器不再出现 Guacamole 登录页（见 `guacamole/README-zh_cn.md` §7） |
+| 网页访问（Guacamole） | ✅ 部署完成。外网 `https://vm-win11.example.com/guacamole/`（`example.com` 为占位符，换成你自己的域名）（VPS nginx 终结 TLS + Authelia 双因素），内网 `http://192.168.2.48:8081/guacamole/`。已开 header 认证，浏览器不再出现 Guacamole 登录页（见 `guacamole/README-zh_cn.md` §7） |
 
 ---
 

@@ -1,6 +1,14 @@
 # Reverse proxy in front of the Guacamole gateway, on a different host (ECS),
 # with Authelia forward_auth in front of that.
 #
+# PLACEHOLDERS - change these three before using this file:
+#   example.com        -> your own domain (appears as vm-win11.example.com and
+#                         auth.example.com: the app, and the IdP portal, which is
+#                         usually a sibling domain rather than a child)
+#   192.168.2.48:8081  -> your VM host as seen from this proxy
+#   guacadmin          -> the Guacamole user that already owns the connections
+# Everything else should apply as-is.
+#
 #   browser ──HTTPS──▶ ECS nginx ──authelia forward_auth──▶ wireguard ──▶ nuc12:8081
 #                        │                                                guacamole
 #                        └─ X-Guac-User: guacadmin
