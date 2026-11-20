@@ -361,9 +361,24 @@ entirely. Two ways to close that:
 If neither is acceptable, use `guacamole-auth-json` instead: the proxy sends a
 signed+encrypted blob with a shared key, which cannot be forged.
 
-**Logout changes meaning.** With a header always present, Guacamole's own logout
-immediately re-authenticates. Log out at the identity provider (the example config maps
-`/logout` there).
+**There is no such thing as logging out of Guacamole any more.** With a header always
+present, the client's own logout drops the token and the very next request re-authenticates
+it — you land back inside. Do **not** "fix" this by pointing `/logout` at the identity
+provider: that session is shared with every other protected service, so logging out of the
+VM console would sign the user out of everything behind the same SSO.
+
+The levers that actually do something:
+
+| Want | Do |
+|---|---|
+| Walk away safely | Lock the **guest** (`Win+L`). The Windows password is the real boundary; the web session is just a transport |
+| Free the single interactive session | Guacamole menu → *Disconnect*, or close the tab — Windows marks the session disconnected and its programs keep running |
+| Revoke everything | Log out at the identity provider, from its own UI, accepting that it affects every service |
+
+If the console must expire faster than the rest of the estate, Authelia can carry a
+**separate cookie entry with its own name and its own `inactivity`/`expiration`** for this
+domain — at the price of no longer sharing the session with the other services (a login
+here stops authenticating them). That is a design decision, not a setting.
 
 A ready-to-adapt reverse-proxy config (Authelia `forward_auth`, WebSocket upgrade, long
 timeouts, header stamping): [`nginx-vm-win11.conf.example`](nginx-vm-win11.conf.example).

@@ -85,11 +85,20 @@ server {
         return 302 /guacamole/;
     }
 
-    # Guacamole's own logout is useless under header auth - the next request is
-    # re-authenticated instantly. Send the user to the identity provider instead.
-    location = /logout {
-        return 302 https://auth.example.com/logout;
-    }
+    # NO /logout mapping here, deliberately.
+    #
+    # Guacamole's own logout under header auth is a no-op: it drops the token and
+    # the next request is re-authenticated from the header, so the user lands back
+    # inside. Mapping /logout to the identity provider is worse than doing nothing,
+    # because the IdP session is shared with every other protected service -
+    # logging out of the VM console would sign the user out everywhere.
+    #
+    # What to reach for instead:
+    #   * walk away            -> lock the guest (Win+L); the Windows password is
+    #                             the real boundary, not the web session
+    #   * free the only session -> Guacamole menu -> Disconnect, or close the tab;
+    #                             Windows just marks the session disconnected
+    #   * revoke everything    -> that is the IdP's job, from the IdP's own UI
 
     location /guacamole/ {
         auth_request     /authelia;

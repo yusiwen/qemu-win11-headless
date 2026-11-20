@@ -332,8 +332,21 @@ http-auth-header: X-Guac-User
 两种都不接受的话，改用 `guacamole-auth-json`：代理发一个用共享密钥签名并加密的
 JSON，伪造不了。
 
-**登出的语义变了。** 头永远在，Guacamole 自己的"退出"会立刻把人重新登进来，必须到
-身份提供方登出（示例配置里把 `/logout` 指过去了）。
+**现在不存在"登出 Guacamole"这回事了。** 头永远在，客户端点退出的结果是丢掉 token、
+下一个请求立刻被重新认证——人还在里面。**不要**把它"修"成跳转身份提供方的登出：那个会话
+被所有受保护的服务共享，为了关掉 VM 控制台而把整个 SSO 登出，是拿一扇窗换整栋楼。
+
+真正管用的三个动作：
+
+| 想达到 | 怎么做 |
+|---|---|
+| 离开时锁上 | 锁**客机**（`Win+L`）。真正的边界是 Windows 密码，网页会话只是传输通道 |
+| 释放唯一的交互式会话 | Guacamole 菜单 → *Disconnect*，或直接关标签页——Windows 侧变成 disconnected，程序继续跑 |
+| 作废所有身份 | 到身份提供方自己的界面登出，并接受它影响全部服务 |
+
+如果这个控制台必须比其他服务更快过期，Authelia 可以给它挂一个**独立命名的 cookie 条目**
+并单独设 `inactivity`/`expiration`——代价是这个域不再与其他服务共享会话（在这里登录
+不会让别的服务也通过认证）。这是设计取舍，不是一个开关。
 
 可直接改用的反代配置（Authelia `forward_auth`、WebSocket 升级、长超时、头注入）：
 [`nginx-vm-win11.conf.example`](nginx-vm-win11.conf.example)。Authelia 侧需要为新域名
