@@ -31,8 +31,9 @@ disk  120 GiB qcow2, 32 GiB allocated, sparse, TRIM wired through to the host
                     ┌─────────────────────── host: nuc12wski5 ───────────────────────┐
   Windows App ──RDP──▶ 0.0.0.0:13389 (QEMU hostfwd) ─┐                              │
                     │                                ├─▶ SLIRP ─▶ guest 10.0.2.15:3389│
-  browser ──HTTPS─▶  0.0.0.0:8443 caddy ─▶ guacamole ─▶ guacd ┘                     │
-                    │   (127.0.0.1:8081 webapp, 127.0.0.1:4822 guacd)                │
+  browser ──HTTP──▶  0.0.0.0:8081 guacamole ─▶ guacd ┘                             │
+                    │   (127.0.0.1:4822 guacd)                                       │
+  browser ──HTTPS─▶ VPS nginx (Authelia) ──wireguard──▶ the 8081 above               │
   ssh tunnel ─────▶  127.0.0.1:5901 QEMU VNC ───────▶ framebuffer (rescue only)     │
                     └────────────────────────────────────────────────────────────────┘
 ```
@@ -40,8 +41,7 @@ disk  120 GiB qcow2, 32 GiB allocated, sparse, TRIM wired through to the host
 | Port | Bind | What | Why exposed that way |
 |---|---|---|---|
 | 13389 | `0.0.0.0` | RDP → guest 3389 | Direct LAN access; NLA + TLS underneath |
-| 8443 | `0.0.0.0` | Guacamole web UI over HTTPS (Caddy, internal CA) | Any browser, any device. HTTPS is required, not cosmetic: the Clipboard API only exists in a secure context |
-| 8081 | `127.0.0.1` | Guacamole webapp, plain HTTP | Loopback only — Caddy owns the LAN-facing port |
+| 8081 | `0.0.0.0` | Guacamole webapp, plain HTTP | LAN + the front proxy. TLS is terminated on the VPS nginx, so this hop stays plain — the browser's secure context (clipboard) comes from that certificate |
 | 5901 | `127.0.0.1` | QEMU VNC console | Rescue only; RFB is unencrypted, so SSH tunnel or nothing |
 | 4822 | `127.0.0.1` | guacd | Internal hop; published on loopback only for the probe script |
 
@@ -107,7 +107,7 @@ cd guacamole && ./bootstrap.sh
 | **Guacamole, not KasmVNC** | KasmVNC is a VNC *server* (its own X server) and cannot attach to someone else's VNC/RDP endpoint. Kasm *Workspaces* can — and its web-native RDP path *is* guacd. For one VM, use the engine directly. |
 | **No GPU passthrough** | The iGPU has no GVT-g/SR-IOV, and RDP encoding happens inside the guest anyway. Zero payoff. |
 | **RDP daily, VNC for rescue** | RFB cannot resize the guest's resolution from the client; RDP with `resize-method=display-update` can. |
-| **HTTPS on the web gateway, not optional** | The browser's Clipboard API only exists in a secure context, so over plain HTTP Guacamole's clipboard dies silently in both directions (`navigator.clipboard === undefined`). Caddy terminates TLS on 8443; the plain-HTTP listener is demoted to loopback. |
+| **TLS at the front proxy, not on this host** | The Clipboard API only exists in a secure context, and that context is decided by the origin the browser talks to. With nginx (Authelia + Let's Encrypt) in front, plain HTTP on the LAN hop costs nothing; a Caddy overlay remains available for direct browser access on the LAN, where clipboard would otherwise die silently. |
 
 ## Pitfalls
 

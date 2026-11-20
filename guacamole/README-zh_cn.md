@@ -4,7 +4,8 @@
 "打开浏览器就能用"的远程桌面。**虚机本身一行没改**：不装 agent、不改注册表、
 不动 QEMU 启动参数，Guacamole 只是主动去连虚机已经在监听的 RDP。
 
-- 网页入口：`https://192.168.2.48:8443/guacamole/`
+- 网页入口：`https://vm-win11.example.com/guacamole/`（前置代理 + Authelia）
+- 局域网：`http://192.168.2.48:8081/guacamole/`（明文，同样没有登录页）
 - 登录用户：`guacadmin`，密码在 `.env` 的 `ADMIN_PASSWORD`（已从出厂默认值改掉）
 - 连接名：`win11-rdp`；Windows 密码**不存盘**，每次连接时在浏览器里输入
 
@@ -16,10 +17,7 @@
 
 ```
 你的浏览器（Mac / 手机 / 任何设备）
-   │  HTTPS :8443                      ← TLS 不是装饰,剪贴板靠它(§7)
-   ▼
-caddy 容器（TLS 终结，本地 CA）
-   │  HTTP :8080（只发布在回环;guacd 走 docker 网络连它）
+   │  HTTP :8081                       ← TLS 在前置代理上终结(§7)
    ▼
 guacamole 容器（Tomcat + 认证 + 会话）
    │  Guacamole 协议 :4822（容器内网，不对外）
@@ -74,7 +72,7 @@ cd /data/vms/win11/guacamole
 
 # 1) 生成 .env（密码只在宿主机生成，不要复制粘贴到任何地方）
 umask 077
-printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=127.0.0.1:8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<微软账户邮箱>\n' \
+printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<微软账户邮箱>\n' \
   "$(openssl rand -hex 16)" "$(openssl rand -hex 16)" > .env
 chmod 600 .env
 
@@ -90,7 +88,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 ./bin/guac-setup.py
 
 # 5) 自检
-curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/   # 期望 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/guacamole/   # 期望 200
 ./bin/guac-probe.py                                                         # 见 §5
 ```
 
@@ -99,7 +97,8 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/  
 
 ## 4. 日常使用
 
-浏览器打开 `https://192.168.2.48:8443/guacamole/`，用 `guacadmin` + `.env` 里的
+浏览器打开 `http://192.168.2.48:8081/guacamole/`（或从外网走前置代理的地址）。开着 header
+认证时没有登录页；没开时用 `guacadmin` + `.env` 里的
 `ADMIN_PASSWORD` 登录，点 `win11-rdp`，在提示里输入 **微软账户密码**
 （用户名已预填 `<微软账户邮箱>`，不要加 `MicrosoftAccount\` 前缀）。
 
@@ -211,45 +210,57 @@ docker compose down / up -d            # 全停 / 全起
 - **升级**：把两处 `1.6.0` 改成新 tag，`docker compose pull && up -d`。跨大版本时
   确认库表是否需要迁移（官方有 upgrade 脚本）。
 
-## 7. TLS：默认开，因为剪贴板靠它
+## 7. TLS 在前置代理上终结，不在这里
 
-网页现在走 **HTTPS 8443**，Caddy 在前面终结 TLS。`docker-compose.tls.yml` + `Caddyfile`
-已经是正常部署的一部分：`docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d`，
-`.env` 里 `WEB_PORT=127.0.0.1:8081`，明文 HTTP 只留在回环上。
+部署形状变了：网页现在是 `0.0.0.0:8081` 明文 HTTP，由 VPS 上的 nginx 通过 WireGuard 访问，
+**TLS 在那台 nginx 上终结**：
 
-**三个理由，按实际杀伤力排序：**
+```
+浏览器 --HTTPS--> nginx（VPS，Authelia forward_auth）--wireguard--> nuc12:8081 guacamole
+```
 
-1. **剪贴板。** 浏览器把 Async Clipboard API 卡在"安全上下文"后面。这套部署实测：
-   `http://192.168.2.48:8081` 里 `isSecureContext: false`、`navigator.clipboard === undefined`，
-   于是 Guacamole 的双向剪贴板完全失效——从客机往外复制、往客机里粘贴，两个方向都
-   悄无声息地什么也不做。换成 `https://192.168.2.48:8443` 后同一个页面
-   `isSecureContext: true`，`readText`/`writeText`/`addEventListener` 全在。
-   **TLS 从"可选"变成"必须"，就是为了这个。**
-2. 微软账户密码不再明文过局域网。
-3. 没有第三点了——RDP 那一段加不加 TLS 都一个样。
+这是刻意的，不是漏配。当初逼着这台机器上 TLS 的那个理由（剪贴板）**由前置代理的证书
+满足了**：安全上下文取决于浏览器真正对话的源，也就是
+`https://vm-win11.example.com`，与本机无关。摘掉 Caddy 之前的实测：经前置 HTTPS
+同一个页面 `isSecureContext: true`、`navigator.clipboard` 带 `readText`/`writeText`；
+而直连明文 `192.168.2.48:8081` 时是 `undefined`。前置代理解决了后者，不需要 Caddy 陪着。
 
-### 7.1 证书
+LAN 这一段走明文，因为它在家里、只有一个用户；WireGuard 隧道本身已经保护了传输。
 
-`tls internal` 用 Caddy 自己的本地 CA 签发：`192.168.2.48` 是内网地址，ACME 不可能验证。
-浏览器第一次会警告；把根证书导进去就彻底消警：
+**唯一的代价**：在局域网里直接用浏览器打开 `http://192.168.2.48:8081`，控制台能用但
+**剪贴板失效**。真需要的话把 Caddy 覆盖层加回来（§7.1）——那时这条路上的 TLS 纯粹是为了
+剪贴板，不是为了保密。
+
+### 7.1 可选：把 TLS 加回本机
+
+`docker-compose.tls.yml` + `Caddyfile` 依然可用，栈里其他东西都不用改：
+
+```bash
+echo 'WEB_PORT=127.0.0.1:8081' >> .env        # 网页退回回环
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+# https://192.168.2.48:8443/guacamole/
+```
+
+证书来自 Caddy 自己的本地 CA（`tls internal`）——`192.168.2.48` 是内网地址，ACME 不可能
+验证。浏览器第一次会警告；导入根证书即可消警：
 
 ```bash
 docker exec win11-guac-tls cat /data/caddy/pki/authorities/local/root.crt > nuc12-caddy-root.crt
-# macOS：双击这个文件导入，或者
+# macOS：双击导入，或者
 sudo security add-trusted-cert -d -r trustRoot \
      -k /Library/Keychains/System.keychain nuc12-caddy-root.crt
 ```
 
-信任之前先确认链是完整的（期望 `TLS: 0`）：
+信任前先确认链完整（期望 `TLS: 0`）：
 
 ```bash
-curl -s -o /dev/null -w 'HTTP %{http_code}  TLS %{ssl_verify_result}\n' \
+curl -s -o /dev/null -w 'HTTP %{http_code}  TLS %{ssl_verify_result}
+' \
      --cacert nuc12-caddy-root.crt https://192.168.2.48:8443/guacamole/
 ```
 
-当前根证书：`CN=Caddy Local Authority - 2026 ECC Root`，SHA-256
-`E6:34:42:ED:A3:EA:65:9B:96:D5:D0:1C:E5:84:56:B5:0A:B4:91:53:04:97:BD:21:5B:74:5D:2C:56:BA:76:65`。
-它存在 `./caddy-data/` 里，删掉这个目录就等于换了 CA，所有客户端都要重新信任一次。
+它的根证书（`CN=Caddy Local Authority - 2026 ECC Root`）存在 `./caddy-data/`，删掉该目录
+等于换 CA，所有客户端都要重新信任。
 
 ### 7.2 两个 SNI 坑，同一条毫无信息量的报错
 
@@ -266,7 +277,7 @@ curl -s -o /dev/null -w 'HTTP %{http_code}  TLS %{ssl_verify_result}\n' \
 在那个 site 块里加第二个主机名而不设 `default_sni`——那会多签一张证书，然后不带 SNI 的
 IP 握手就什么也匹配不上。
 
-### 7.3 结果
+### 7.3 结果（开着覆盖层时的样子）
 
 ```
 $ curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/
@@ -298,7 +309,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d guacamole
 | 请求 | 结果 |
 |---|---|
 | `POST /guacamole/api/tokens` + `X-Guac-User: guacadmin`，直连 8081 | `200`，`dataSource: header`，连接列表 `win11-rdp` |
-| 同样的请求，经 Caddy 8443 | `200` —— 头穿过了这一跳 |
+| 同样的请求，经过一跳代理 | `200` —— 头穿得过（在 Caddy 上实测；nginx 同理） |
 | 不带该头 | `403 Invalid login.`，JDBC 登录页作为兜底仍然可用 |
 | `X-Guac-User: nobody-here` | `200` 但**零连接**（认证层信这个名字，权限来自数据库） |
 
@@ -311,10 +322,10 @@ http-auth-header: X-Guac-User
 ```
 
 **安全模型——这段最重要。** header 认证是无条件信任这个头的，所以 webapp 必须"只能
-被代理访问"。任何能直连 `https://192.168.2.48:8443` 的人，只要发一个
+被代理访问"。任何能直连 `http://192.168.2.48:8081` 的人，只要发一个
 `X-Guac-User: guacadmin` 就完全绕开 2FA。两种收口方式：
 
-1. **防火墙**：nuc12 上只允许 WireGuard 对端 / 路由访问 8443。
+1. **防火墙**：nuc12 上只允许 WireGuard 对端 / 路由访问 8081。
 2. **SSH 隧道**：代理机 `ssh -N -L 8081:127.0.0.1:8081 …`，上游写
    `http://127.0.0.1:8081`——什么都不暴露，伪造也就无从谈起。
 
@@ -437,7 +448,7 @@ RustDesk 是 TeamViewer 那类替代品，不是 RDP 网关。
 | 参数 | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, color-depth=32 |
 | guacd 协商 | `Security mode: NLA`、`Resize method: display-update`、`args` 报 `VERSION_1_5_0` |
 | 认证 | 空密码 → 客机 `Authentication failure (invalid credentials?)`（链路通，等真密码） |
-| 端口 | 8443 HTTPS（0.0.0.0，Caddy）、8081 HTTP（仅 127.0.0.1）、4822 guacd（仅 127.0.0.1） |
+| 端口 | 8081 HTTP（0.0.0.0，网页）、4822 guacd（仅 127.0.0.1）；8443 只在启用可选的 Caddy 覆盖层时存在 |
 | 会话超时 | 默认 60 分钟 → 改为 **720 分钟**，启动日志确认 `Sessions will expire after 720 minutes of inactivity.` |
 | 资源 | 实测常驻内存：guacamole 313 MiB + postgres 30 MiB + guacd 11 MiB ≈ **354 MiB**（`docker stats --no-stream`） |
 

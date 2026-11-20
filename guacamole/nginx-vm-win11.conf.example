@@ -1,9 +1,14 @@
 # Reverse proxy in front of the Guacamole gateway, on a different host (ECS),
 # with Authelia forward_auth in front of that.
 #
-#   browser ──HTTPS──▶ ECS nginx ──authelia forward_auth──▶ wireguard ──▶ nuc12
-#                        │                                              ├─ Caddy :8443
-#                        └─ X-Guac-User: guacadmin                      └─ guacamole
+#   browser ──HTTPS──▶ ECS nginx ──authelia forward_auth──▶ wireguard ──▶ nuc12:8081
+#                        │                                                guacamole
+#                        └─ X-Guac-User: guacadmin
+#
+# TLS is terminated HERE and nowhere else: the LAN hop is plain HTTP on purpose
+# (inside the house, single user). The browser's secure context - which the
+# clipboard needs - comes from this server's certificate, so dropping TLS on
+# nuc12 costs nothing.
 #
 # Guacamole runs with HTTP_AUTH_ENABLED=true (HEADER_AUTH=true in .env), so it
 # does not show a login form as long as the proxy sends X-Guac-User. The value
@@ -19,13 +24,13 @@
 #
 # SECURITY MODEL, read before deploying: header auth trusts the header, so the
 # webapp must not be reachable except through this proxy. Anything that can talk
-# to nuc12:8443 directly can send X-Guac-User and skip Authelia entirely
+# to nuc12:8081 directly can send X-Guac-User and skip Authelia entirely
 # (measured: a made-up user gets a token but zero connections; "guacadmin" gets
-# the VM). Pick one:
-#   a) firewall nuc12 so only the wireguard peer / router can reach 8443
-#   b) drop Caddy from this path and use an ssh tunnel from here to nuc12:
-#        ssh -N -L 8081:127.0.0.1:8081 yusiwen@192.168.2.48
-#      then upstream is http://127.0.0.1:8081 and nothing is exposed at all.
+# the VM). The LAN is trusted here by choice - a single user, one flat network.
+# If that changes, either firewall 8081 to the wireguard peer / router, or use an
+# ssh tunnel from here:
+#     ssh -N -L 8081:127.0.0.1:8081 yusiwen@192.168.2.48
+# with upstream http://127.0.0.1:8081 - then nothing is exposed at all.
 
 # WebSocket upgrade for /guacamole/websocket-tunnel. Must live in http {} context,
 # which is where conf.d/*.conf is included.
@@ -117,14 +122,10 @@ server {
         proxy_read_timeout      3600s;
         proxy_send_timeout      3600s;
 
-        # Option A: nuc12's Caddy. It serves a private-CA certificate with an IP
-        # SAN and default_sni set, so an IP-based upstream with no SNI works.
-        proxy_pass           https://192.168.2.48:8443/guacamole/;
-        proxy_ssl_server_name off;
-        proxy_ssl_verify      off;   # or: proxy_ssl_trusted_certificate + on
-
-        # Option B (ssh tunnel, nothing exposed on the LAN): replace the three
-        # lines above with
-        #     proxy_pass http://127.0.0.1:8081/guacamole/;
+        # Plain HTTP on purpose: the LAN/WireGuard hop is encrypted by the tunnel
+        # itself, and TLS already ends here. (If you later want an encrypted hop
+        # too, put back docker-compose.tls.yml + Caddyfile on nuc12 and point this
+        # at https://192.168.2.48:8443/guacamole/ with proxy_ssl_verify off.)
+        proxy_pass http://192.168.2.48:8081/guacamole/;
     }
 }

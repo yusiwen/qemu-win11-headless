@@ -5,7 +5,8 @@ that works from any browser. **The VM itself is untouched**: no agent installed,
 registry change, no QEMU flag altered — Guacamole simply connects to the RDP port the
 guest already listens on.
 
-- Web UI: `https://192.168.2.48:8443/guacamole/`
+- Web UI: `https://vm-win11.example.com/guacamole/` (front proxy, Authelia)
+- On the LAN: `http://192.168.2.48:8081/guacamole/` (plain HTTP, no login form either)
 - Login: `guacadmin`, password in `.env` (`ADMIN_PASSWORD`, rotated off the factory value)
 - Connection: `win11-rdp`; the Windows password is **never stored** — the browser prompts for it every time
 
@@ -17,10 +18,7 @@ guest already listens on.
 
 ```
 your browser (Mac / phone / anything)
-   │  HTTPS :8443                      ← TLS is not decoration, the clipboard needs it (§7)
-   ▼
-caddy container (TLS terminator, internal CA)
-   │  HTTP :8080 (loopback-published; guacd talks to it over the docker network)
+   │  HTTP :8081                       ← TLS ends at the front proxy (§7)
    ▼
 guacamole container (Tomcat + auth + session)
    │  Guacamole protocol :4822 (docker-internal, not published)
@@ -77,7 +75,7 @@ cd /data/vms/win11/guacamole
 
 # 1) generate .env (passwords are created on the host and never copied anywhere)
 umask 077
-printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=127.0.0.1:8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<your microsoft account email>\n' \
+printf 'DB_PASSWORD=%s\nADMIN_PASSWORD=%s\nWEB_PORT=8081\nRDP_HOST=host.docker.internal\nRDP_PORT=13389\nRDP_USER=<your microsoft account email>\n' \
   "$(openssl rand -hex 16)" "$(openssl rand -hex 16)" > .env
 chmod 600 .env
 
@@ -93,7 +91,7 @@ docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 ./bin/guac-setup.py
 
 # 5) self-test
-curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/   # expect 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/guacamole/   # expect 200
 ./bin/guac-probe.py                                                         # see §5
 ```
 
@@ -105,7 +103,8 @@ database is not re-initialised; to start over:
 
 ## 4. Using it
 
-Open `https://192.168.2.48:8443/guacamole/`, log in as `guacadmin` with
+Open `http://192.168.2.48:8081/guacamole/` on the LAN (or the front-proxy URL from anywhere
+else). With header auth on there is no login form; without it, log in as `guacadmin` with
 `ADMIN_PASSWORD` from `.env`, click `win11-rdp`, and enter the **Microsoft account
 password** at the prompt (the username is pre-filled — do not add a
 `MicrosoftAccount\` prefix).
@@ -226,29 +225,46 @@ docker compose down / up -d            # stop / start everything
 - **Upgrade**: change the two `1.6.0` tags, then `docker compose pull && up -d`. On major
   versions check whether the schema needs the official upgrade scripts.
 
-## 7. TLS: on, because the clipboard depends on it
+## 7. TLS ends at the front proxy, not here
 
-The web UI is served over **HTTPS on 8443**, with Caddy terminating TLS in front of the
-webapp. `docker-compose.tls.yml` + `Caddyfile` are part of the normal deployment now —
-`docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d`, with
-`WEB_PORT=127.0.0.1:8081` in `.env` so the plain-HTTP listener exists on loopback only.
+The deployment shape changed: the web UI is now plain HTTP on `0.0.0.0:8081`, reached
+through the front nginx on the VPS over WireGuard, and **that nginx is where TLS ends**:
 
-**Three reasons, in order of how much they actually bite:**
+```
+browser --HTTPS--> nginx (VPS, Authelia forward_auth) --wireguard--> nuc12:8081 guacamole
+```
 
-1. **Clipboard.** Browsers gate the Async Clipboard API on a "secure context".
-   Measured on this deployment: `http://192.168.2.48:8081` reports
-   `isSecureContext: false` and `navigator.clipboard === undefined`, so Guacamole's
-   bidirectional clipboard does nothing — copy out of the guest or paste into it, both
-   silently fail. On `https://192.168.2.48:8443` the same page reports
-   `isSecureContext: true` with `readText`/`writeText`/`addEventListener` available.
-   **This is the whole reason TLS stopped being optional.**
-2. **The Microsoft account password** no longer crosses the LAN in clear text.
-3. Nothing else — the RDP leg is unaffected either way.
+This is deliberate, not an oversight. The clipboard requirement that forced TLS onto this
+host in the first place is satisfied *by the front proxy's certificate*: the browser's
+secure context is decided by the origin it actually talks to, which is
+`https://vm-win11.example.com`, not by anything on this machine. Measured before
+dropping Caddy: same page over the front HTTPS ⇒ `isSecureContext: true`,
+`navigator.clipboard` an object with `readText`/`writeText`; over plain HTTP straight to
+`192.168.2.48:8081` ⇒ `undefined`. The front proxy fixed the second case without keeping
+Caddy.
 
-### 7.1 The certificate
+The LAN hop is plain HTTP because it is inside the house and there is one user; the
+WireGuard tunnel already protects it in transit.
 
-`tls internal` issues from Caddy's own local CA: `192.168.2.48` is a private address, so
-ACME could never validate it. Browsers warn once; importing the root makes it silent:
+**The one thing this costs**: opening `http://192.168.2.48:8081` *directly in a browser*
+on the LAN gives you a working console but a dead clipboard. If that matters, put the
+Caddy overlay back (§7.2) — and note the TLS on that path then exists purely for the
+clipboard, not for secrecy.
+
+### 7.1 Optional: TLS back on this host
+
+`docker-compose.tls.yml` + `Caddyfile` still work; nothing else in the stack needs
+changing:
+
+```bash
+echo 'WEB_PORT=127.0.0.1:8081' >> .env        # webapp back to loopback
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+# https://192.168.2.48:8443/guacamole/
+```
+
+The certificate comes from Caddy's own local CA (`tls internal`) — `192.168.2.48` is a
+private address, so ACME could never validate it. Browsers warn once; importing the root
+silences it:
 
 ```bash
 docker exec win11-guac-tls cat /data/caddy/pki/authorities/local/root.crt > nuc12-caddy-root.crt
@@ -260,14 +276,13 @@ sudo security add-trusted-cert -d -r trustRoot \
 Verify the chain is complete before trusting anything (expect `TLS: 0`):
 
 ```bash
-curl -s -o /dev/null -w 'HTTP %{http_code}  TLS %{ssl_verify_result}\n' \
+curl -s -o /dev/null -w 'HTTP %{http_code}  TLS %{ssl_verify_result}
+' \
      --cacert nuc12-caddy-root.crt https://192.168.2.48:8443/guacamole/
 ```
 
-Current root: `CN=Caddy Local Authority - 2026 ECC Root`, SHA-256
-`E6:34:42:ED:A3:EA:65:9B:96:D5:D0:1C:E5:84:56:B5:0A:B4:91:53:04:97:BD:21:5B:74:5D:2C:56:BA:76:65`.
-It lives in `./caddy-data/`, so deleting that directory changes the CA and every client
-has to trust the new one again.
+Its root (`CN=Caddy Local Authority - 2026 ECC Root`) lives in `./caddy-data/`, so
+deleting that directory changes the CA and every client must trust the new one.
 
 ### 7.2 Two SNI traps, one useless error message
 
@@ -285,7 +300,7 @@ The `Caddyfile` in this directory has both fixes, with the reasoning inline. Do 
 also setting `default_sni` — a hostname there gets its own certificate, and SNI-less IP
 handshakes then match nothing.
 
-### 7.3 Result
+### 7.3 Result, with the overlay on
 
 ```
 $ curl -sk -o /dev/null -w '%{http_code}\n' https://192.168.2.48:8443/guacamole/
@@ -319,7 +334,7 @@ Measured on this deployment (Apache 200 = authenticated, 403 = falls back to the
 | Request | Result |
 |---|---|
 | `POST /guacamole/api/tokens` + `X-Guac-User: guacadmin` → 8081 | `200`, `dataSource: header`, connection list `win11-rdp` |
-| same, through Caddy on 8443 | `200` — the header survives the hop |
+| same request, through a proxy hop | `200` — the header survives the hop (measured through Caddy; nginx behaves the same) |
 | same without the header | `403 Invalid login.` → the JDBC login form still works as a fallback |
 | `X-Guac-User: nobody-here` | `200` with **zero connections** (header auth trusts the name; permissions come from the database) |
 
@@ -335,10 +350,10 @@ http-auth-header: X-Guac-User
 
 **Security model — this is the part that matters.** Header auth trusts the header, so the
 webapp must be unreachable except through the proxy. Anyone who can hit
-`https://192.168.2.48:8443` directly can send `X-Guac-User: guacadmin` and skip 2FA
+`http://192.168.2.48:8081` directly can send `X-Guac-User: guacadmin` and skip 2FA
 entirely. Two ways to close that:
 
-1. **Firewall** nuc12 so 8443 is reachable only from the WireGuard peer / router.
+1. **Firewall** nuc12 so 8081 is reachable only from the WireGuard peer / router.
 2. **SSH tunnel** from the proxy host and drop Caddy from that path
    (`ssh -N -L 8081:127.0.0.1:8081 …`, upstream `http://127.0.0.1:8081`) — nothing is
    exposed, and spoofing becomes impossible.
@@ -475,7 +490,7 @@ RustDesk is a TeamViewer-class tool, not an RDP gateway.
 | Parameters | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, color-depth=32 |
 | guacd negotiation | `Security mode: NLA`, `Resize method: display-update`, `args` reports `VERSION_1_5_0` |
 | Authentication | empty password → guest `Authentication failure (invalid credentials?)` (path OK, awaiting the real password) |
-| Ports | 8443 HTTPS (0.0.0.0, Caddy), 8081 HTTP (127.0.0.1 only), 4822 guacd (127.0.0.1 only) |
+| Ports | 8081 HTTP (0.0.0.0, webapp), 4822 guacd (127.0.0.1 only); 8443 only if the optional Caddy overlay is on |
 | Session timeout | default 60 min → **720 min**, confirmed by `Sessions will expire after 720 minutes of inactivity.` |
 | Memory | measured: guacamole 313 MiB + postgres 30 MiB + guacd 11 MiB ≈ **354 MiB** (`docker stats --no-stream`) |
 

@@ -179,7 +179,8 @@ def main():
         cid = body["identifier"]
         print("[2/2] 连接 %s 已创建 (id=%s)" % (CONNECTION_NAME, cid))
 
-    print("\n浏览器: https://<本机IP>:8443/guacamole/   （明文仅回环 http://127.0.0.1:%s/guacamole/）" % port)
+    print("\n局域网: http://<本机IP>:%s/guacamole/" % port)
+    print("对外:   由前置 nginx 终结 TLS 并做 Authelia forward_auth（X-Guac-User 头）")
     print("用户:   guacadmin")
     print("密码:   .env 里的 ADMIN_PASSWORD")
     print("连接:   %s  ->  %s:%s (RDP/NLA，密码在连接时询问)"

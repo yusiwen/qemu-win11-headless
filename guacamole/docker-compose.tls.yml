@@ -1,8 +1,15 @@
-# Optional TLS front for the Guacamole web UI.
+# OPTIONAL TLS front for the Guacamole web UI - NOT part of the normal deployment.
 #
-# Rationale: with plain HTTP the Windows password is typed into the browser and
-# travels in cleartext across the LAN. This overlay puts Caddy in front, so the
-# browser leg is HTTPS while guacd still speaks RDP to the QEMU hostfwd.
+# The normal path is: browser --HTTPS--> external nginx (Authelia) --> this LAN
+# --> http://nuc12:8081/guacamole/. TLS is terminated at the front proxy, so the
+# LAN hop is plain HTTP on purpose: it is inside the house, and the browser's
+# secure context (which the clipboard needs) comes from the front proxy's
+# certificate, not from here.
+#
+# Enable this overlay only if you want to reach Guacamole *directly* from a
+# browser on the LAN. Then HTTPS is not cosmetic: the browser's Clipboard API
+# only exists in a secure context, and Guacamole's clipboard dies silently over
+# plain HTTP (measured: isSecureContext false, navigator.clipboard undefined).
 #
 # Enable:
 #   1. in .env set:  WEB_PORT=127.0.0.1:8081      (web UI stops being LAN-visible)
