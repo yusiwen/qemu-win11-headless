@@ -280,6 +280,54 @@ $ # 浏览器打开同一地址：
 ```
 
 
+### 7.4 Header 认证：让登录页消失，把认证交给代理
+
+Guacamole **没有"关闭认证"的开关**——每个连接都必须属于一个已认证的用户，认证层同时决定
+这个用户能看到哪些连接。能做的是让它不再追问：`guacamole-auth-header` 接受反向代理放进
+请求头的用户名，浏览器就再也看不到登录页。镜像自带该扩展，compose 里一行打开：
+
+```bash
+echo 'HEADER_AUTH=true' >> .env          # 对应 compose 的 HTTP_AUTH_ENABLED
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d guacamole
+```
+
+然后用 `guacamole.properties` 指定头名。**不要用 `REMOTE_USER`**——见下。
+
+本机实测（200 = 认证通过，403 = 退回登录页）：
+
+| 请求 | 结果 |
+|---|---|
+| `POST /guacamole/api/tokens` + `X-Guac-User: guacadmin`，直连 8081 | `200`，`dataSource: header`，连接列表 `win11-rdp` |
+| 同样的请求，经 Caddy 8443 | `200` —— 头穿过了这一跳 |
+| 不带该头 | `403 Invalid login.`，JDBC 登录页作为兜底仍然可用 |
+| `X-Guac-User: nobody-here` | `200` 但**零连接**（认证层信这个名字，权限来自数据库） |
+
+**`REMOTE_USER` 的坑。** 扩展默认读 `REMOTE_USER`，而下划线不是每一跳都原样传递：
+直连 webapp 认证成功，**同一个请求**经 Caddy 却返回 `403`——因为 Go 把 `REMOTE_USER`
+规范化成了 `Remote_user`。带横线的头名能原样穿过 nginx、Caddy 和 Envoy：
+
+```properties
+http-auth-header: X-Guac-User
+```
+
+**安全模型——这段最重要。** header 认证是无条件信任这个头的，所以 webapp 必须"只能
+被代理访问"。任何能直连 `https://192.168.2.48:8443` 的人，只要发一个
+`X-Guac-User: guacadmin` 就完全绕开 2FA。两种收口方式：
+
+1. **防火墙**：nuc12 上只允许 WireGuard 对端 / 路由访问 8443。
+2. **SSH 隧道**：代理机 `ssh -N -L 8081:127.0.0.1:8081 …`，上游写
+   `http://127.0.0.1:8081`——什么都不暴露，伪造也就无从谈起。
+
+两种都不接受的话，改用 `guacamole-auth-json`：代理发一个用共享密钥签名并加密的
+JSON，伪造不了。
+
+**登出的语义变了。** 头永远在，Guacamole 自己的"退出"会立刻把人重新登进来，必须到
+身份提供方登出（示例配置里把 `/logout` 指过去了）。
+
+可直接改用的反代配置（Authelia `forward_auth`、WebSocket 升级、长超时、头注入）：
+[`nginx-vm-win11.conf.example`](nginx-vm-win11.conf.example)。Authelia 侧需要为新域名
+加 `access_control` 规则（`policy: two_factor`），并让 session cookie 的 domain 覆盖它。
+
 ## 8. 收紧：让 RDP 只对 guacd 可见
 
 现在 `192.168.2.48:13389` 对整个局域网开放。如果只想留网页一个入口：

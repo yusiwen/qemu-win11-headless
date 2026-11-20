@@ -299,6 +299,62 @@ $ # in the browser, on the same URL:
 ```
 
 
+### 7.4 Header auth: no login form, when a proxy does the auth
+
+Guacamole has **no "disable authentication" switch** — every connection needs an
+authenticated user, and the auth layer is also what decides which connections that user
+sees. What you can do is stop Guacamole asking: `guacamole-auth-header` accepts the
+username from a request header that the reverse proxy sets, so the browser never sees a
+login form. The image ships the extension; compose enables it:
+
+```bash
+echo 'HEADER_AUTH=true' >> .env          # compose: HTTP_AUTH_ENABLED
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d guacamole
+```
+
+`guacamole.properties` then names the header. **Not `REMOTE_USER`** — see below.
+
+Measured on this deployment (Apache 200 = authenticated, 403 = falls back to the form):
+
+| Request | Result |
+|---|---|
+| `POST /guacamole/api/tokens` + `X-Guac-User: guacadmin` → 8081 | `200`, `dataSource: header`, connection list `win11-rdp` |
+| same, through Caddy on 8443 | `200` — the header survives the hop |
+| same without the header | `403 Invalid login.` → the JDBC login form still works as a fallback |
+| `X-Guac-User: nobody-here` | `200` with **zero connections** (header auth trusts the name; permissions come from the database) |
+
+**The `REMOTE_USER` trap.** The extension defaults to `REMOTE_USER`, and an underscore is
+not carried verbatim by every hop: direct to the webapp the header authenticated fine,
+the *same* request through Caddy answered `403`, because Go canonicalises
+`REMOTE_USER` to `Remote_user`. A dashed header name passes through nginx, Caddy and
+Envoy untouched:
+
+```properties
+http-auth-header: X-Guac-User
+```
+
+**Security model — this is the part that matters.** Header auth trusts the header, so the
+webapp must be unreachable except through the proxy. Anyone who can hit
+`https://192.168.2.48:8443` directly can send `X-Guac-User: guacadmin` and skip 2FA
+entirely. Two ways to close that:
+
+1. **Firewall** nuc12 so 8443 is reachable only from the WireGuard peer / router.
+2. **SSH tunnel** from the proxy host and drop Caddy from that path
+   (`ssh -N -L 8081:127.0.0.1:8081 …`, upstream `http://127.0.0.1:8081`) — nothing is
+   exposed, and spoofing becomes impossible.
+
+If neither is acceptable, use `guacamole-auth-json` instead: the proxy sends a
+signed+encrypted blob with a shared key, which cannot be forged.
+
+**Logout changes meaning.** With a header always present, Guacamole's own logout
+immediately re-authenticates. Log out at the identity provider (the example config maps
+`/logout` there).
+
+A ready-to-adapt reverse-proxy config (Authelia `forward_auth`, WebSocket upgrade, long
+timeouts, header stamping): [`nginx-vm-win11.conf.example`](nginx-vm-win11.conf.example).
+On the Authelia side it needs an `access_control` rule for the new domain with
+`policy: two_factor`, and a session cookie whose domain covers it.
+
 ## 8. Tightening: make RDP visible only to guacd
 
 Right now `192.168.2.48:13389` is open to the whole LAN. To leave only the web entry point:

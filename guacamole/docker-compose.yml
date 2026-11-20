@@ -49,6 +49,17 @@ services:
       POSTGRESQL_DATABASE: guacamole_db
       POSTGRESQL_USER: guacamole_user
       POSTGRESQL_PASSWORD: ${DB_PASSWORD}
+      # HTTP header auth (SSO). When HEADER_AUTH=true the image links
+      # guacamole-auth-header.jar into GUACAMOLE_HOME/extensions, and Guacamole
+      # logs in whoever the reverse proxy names in the REMOTE_USER header -
+      # no login form, the proxy's own auth (Authelia/oauth2-proxy/etc.) is the
+      # only interactive gate. Explicitly "false" keeps it loaded-but-disabled;
+      # the mere presence of an HTTP_AUTH_* variable is what would enable it.
+      #
+      # SECURITY: this trusts a header. Only enable it when the webapp cannot be
+      # reached except through that proxy (loopback bind, ssh tunnel, or a
+      # firewall rule) - otherwise anyone can send the header and skip auth.
+      HTTP_AUTH_ENABLED: "${HEADER_AUTH:-false}"
     volumes:
       # Session/token lifetime. GUACAMOLE_HOME is /etc/guacamole in this image,
       # so a read-only mount of one file is enough; nothing else is overridden.
