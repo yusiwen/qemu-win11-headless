@@ -24,6 +24,7 @@ disk  120 GiB qcow2, 32 GiB allocated, sparse, TRIM wired through to the host
 | `win11.service` | systemd unit (Type=forking, QGA graceful stop) |
 | `vm.conf` | Boot order only (`BOOT=c`), sourced by the start script |
 | `guacamole/` | Browser gateway: compose + properties + bootstrap, see [`guacamole/README.md`](guacamole/README.md) |
+| `TROUBLESHOOTING.md` | Sessions and keystrokes: three faults that are not where they look · [中文](TROUBLESHOOTING-zh_cn.md) |
 
 ## Architecture
 
@@ -146,6 +147,10 @@ produce symptoms that point at the wrong layer.
 
 Full explanations for each of these, with command output: `README-zh_cn.md` §7.
 
+Session-level faults have their own document — the session dropping minutes after the
+browser loses focus, a password prompt on every reconnect, and `Ctrl+C` arriving as
+`Ctrl+Shift+C`: **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
+
 ## Operations cheat sheet
 
 ```bash
@@ -209,6 +214,7 @@ Every document is English with a `-zh_cn` Chinese counterpart.
 
 - **[bin/README.md](bin/README.md)** — what each script does and the experiments behind it · [中文](bin/README-zh_cn.md)
 - **[guacamole/README.md](guacamole/README.md)** — the browser gateway in depth · [中文](guacamole/README-zh_cn.md)
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — sessions and keystrokes: the three faults that look like gateway bugs · [中文](TROUBLESHOOTING-zh_cn.md)
 - **[README-zh_cn.md](README-zh_cn.md)** — the full Chinese manual: every QEMU flag, the install walkthrough, 12 troubleshooting sections, complete change log
 
 ## License

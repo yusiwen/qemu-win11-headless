@@ -71,6 +71,8 @@
 /data/vms/win11/
 ├── README.md                 # 英文概览（GitHub 首页）
 ├── README-zh_cn.md           # **本文档**：完整中文手册
+├── TROUBLESHOOTING.md        # 排障专题（英文）：会话掉线 / 重连要密码 / Ctrl+C 变成 Ctrl+Shift+C
+├── TROUBLESHOOTING-zh_cn.md  # 排障专题中文版
 ├── win11.qcow2               # 120 GiB 虚拟盘（qcow2, cluster 64K, lazy_refcounts, preallocation=metadata）
 ├── vm.conf                   # systemd EnvironmentFile，目前 BOOT=d（光盘优先）
 ├── vnc.pass                  # VNC 密码（600 权限），启动脚本经 QMP 把它设给 QEMU
@@ -396,6 +398,10 @@ sudo systemctl start win11
 ---
 
 ## 7. 排错
+
+> 有三类故障不在这份手册里，而是单独成文——**切走几分钟后会话掉线**、**每次重连都
+> 要求输入 Windows 密码**、**`Ctrl+C` 变成 `Ctrl+Shift+C`（打开开发者工具）**。它们的
+> 证据、成因和修法见 **[TROUBLESHOOTING-zh_cn.md](TROUBLESHOOTING-zh_cn.md)**。
 
 ### 7.1 swtpm 起不来：`Could not open UnixIO socket: Permission denied`
 
