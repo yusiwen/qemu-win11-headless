@@ -50,6 +50,15 @@ else
     echo "==> initdb.sql 已存在，来源 ${SOURCE}，与 compose 的镜像版本一致"
 fi
 
+# 文件传输后端（drive-path）。guacd 以 uid 1000 运行，目录必须对它可写；
+# 不建这个目录时 enable-drive 会静默失效——连接里还得有 drive-path=/drive。
+mkdir -p drive
+if [ "$(stat -c '%u:%g' drive)" != "1000:1000" ]; then
+    echo "==> 修正 drive/ 属主为 1000:1000（guacd 的 uid）"
+    sudo chown 1000:1000 drive 2>/dev/null \
+        || echo "    警告：chown 失败，浏览器上传文件会失败" >&2
+fi
+
 # 正常部署不带 TLS：前端 nginx 负责 HTTPS，这一段是内网明文（见 README §7）。
 # 想从局域网浏览器直连、并要剪贴板，再加 -f docker-compose.tls.yml。
 echo "==> 启动容器"

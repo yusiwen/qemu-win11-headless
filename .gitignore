@@ -28,6 +28,9 @@ __pycache__/
 # ── Guacamole 的运行时数据与生成物 ───────────────────────────────
 # postgres 数据目录（属主 root:70，含用户表与连接定义）
 guacamole/db/
+# 文件传输后端（drive-path）：浏览器上传的文件落在宿主，属"数据"不入库。
+# 目录本身由 bootstrap.sh 用 mkdir -p + chown 1000:1000 创建。
+guacamole/drive/
 # 注意：guacamole/initdb.sql 是入库的（它可 review、可离线重建）。
 # 它由镜像的 initdb.sh 生成，文件头记录了来源 tag；bootstrap.sh 会校验 tag 是否与
 # compose 一致，不一致就告警——所以升级镜像时不会悄悄用旧 schema。

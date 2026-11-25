@@ -16,6 +16,7 @@ instrumentation, not guessed from symptoms.
 | Session drops minutes after you switch away | browser tab throttling + guacd's 15 s timeout | stop the tab from being throttled |
 | Every reconnect asks for the Windows password | connection has no stored password | store it once |
 | `Ctrl+C` opens DevTools instead of copying | Caps Lock state mismatch → guacd adds Shift | make the two caps states agree, reconnect |
+| A screenshot will not paste into the guest | RDP clipboard is text-only; the drive had no `drive-path` | send it as a file over drive redirection |
 
 ## 1. The session dies minutes after the browser loses focus
 
@@ -235,7 +236,45 @@ python3 -m http.server 8899 --bind 0.0.0.0 --directory /tmp &
 Invoke-WebRequest http://10.0.2.2:8899/probe.ps1 -OutFile C:\probe.ps1 -UseBasicParsing
 ```
 
-## 5. What is *not* a fault
+## 5. A screenshot cannot be pasted into the guest
+
+**Symptom.** A screenshot tool on the client copies an image to the local clipboard and
+the guest never receives it — paste does nothing. Clicking through the tool's overlay
+also opens the guest's Start menu.
+
+**Two unrelated causes.**
+
+**5.1 The clipboard carries text only.** Guacamole's clipboard is a text stream, and
+guacd's RDP implementation handles `CF_UNICODETEXT` — no bitmap format. An image copied
+on the client therefore has no path into the guest, no matter which tool produced it or
+how many clipboard parameters are set. Do not hunt for a switch: there is none.
+
+Send the screenshot as a **file** instead, over RDP drive redirection.
+
+- `enable-drive` alone is not enough. **`drive-path` is required** and must name a
+  directory *inside the guacd container*; this deployment shipped without it, so the
+  drive existed only as a parameter. Nothing reports the omission — and it cannot be
+  checked from outside the session either: queried from session 0 (over QGA),
+  `\\tsclient` answers **Access denied** whether or not the drive exists, because the
+  RDP redirector is per-session. Verify from inside the connected session.
+- Wire it end to end: compose mounts `./drive:/drive` into guacd, the connection sets
+  `drive-path=/drive`, and the host directory must be writable by **uid 1000** (guacd's
+  user in the image).
+- Use it: the Guacamole menu (`Ctrl+Alt+Shift`) has a file panel — upload from the
+  client, then open the file in the guest from `\\tsclient\\<drive-name>`.
+
+**5.2 `Command` is forwarded as the Windows key.** The client sends the *identity* of
+the key, so a client-side hotkey built on `Cmd` arrives in the guest as `Win`. Double-
+tapping `Cmd` to trigger a screenshot tool is therefore two `Win` presses in the guest,
+and Windows opens the Start menu. While the tool's overlay has focus Guacamole also
+stops receiving keyups, so a modifier can stay logically down — the same class of fault
+as #3.
+
+Fix it on the client: give the tool a hotkey that is not a Windows shortcut
+(`Ctrl+Option+…` rather than `Cmd`). There is no Guacamole-side switch to suppress
+`Meta`, because suppressing it would break real `Win` shortcuts.
+
+## 6. What is *not* a fault
 
 - **Clipboard dead in the browser.** Not a Guacamole setting: over plain HTTP the page
   is not a secure context, `navigator.clipboard` does not exist, and copy/paste fails

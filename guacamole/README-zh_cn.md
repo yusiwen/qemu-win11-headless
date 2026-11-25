@@ -109,7 +109,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/guacamole/   # �
 |---|---|
 | 动态分辨率 | `resize-method=display-update`，浏览器窗口多大，客机分辨率就跟着变 |
 | 剪贴板 | 双向，默认开启 |
-| 文件传输 | `enable-drive=true`，左边缘可拉出文件面板。落盘在 guacd 容器 `/tmp`，**容器重启即失**，只当临时中转 |
+| 文件传输 | `enable-drive=true` **加 `drive-path=/drive`**（后者必填，缺了盘根本不会出现）；左边缘可拉出文件面板，客机里显示为 `\\tsclient\win11`。`./drive` 挂进 guacd，文件落在宿主、不随容器重启消失 |
 | 音频 | 客机 → 浏览器（`audio/L16`） |
 | 多设备 | 手机浏览器也能进，不需要装任何 App |
 
@@ -459,7 +459,7 @@ RustDesk 是 TeamViewer 那类替代品，不是 RDP 网关。
 | 网页 | `GET /guacamole/` → **200**（回环和局域网都试过） |
 | 库表 | `initdb.sql` 793 行，`guacamole_*` 表全部建成 |
 | 连接 | `win11-rdp` id=1，13 个参数，已授权给 guacadmin |
-| 参数 | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, color-depth=32 |
+| 参数 | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, drive-path=/drive, color-depth=32 |
 | guacd 协商 | `Security mode: NLA`、`Resize method: display-update`、`args` 报 `VERSION_1_5_0` |
 | 认证 | 空密码 → 客机 `Authentication failure (invalid credentials?)`（链路通，等真密码） |
 | 端口 | 8081 HTTP（0.0.0.0，网页）、4822 guacd（仅 127.0.0.1）；8443 只在启用可选的 Caddy 覆盖层时存在 |

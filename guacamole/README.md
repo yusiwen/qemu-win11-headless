@@ -114,7 +114,7 @@ password** at the prompt (the username is pre-filled — do not add a
 |---|---|
 | Dynamic resolution | `resize-method=display-update`: the guest follows the browser window |
 | Clipboard | bidirectional, on by default |
-| File transfer | `enable-drive=true`; the panel slides out from the left edge. Files land in the guacd container's `/tmp` — **lost on container restart**, so treat it as a transfer buffer |
+| File transfer | `enable-drive=true` **plus `drive-path=/drive`** (the second one is required; without it the drive never appears); the panel slides out from the left edge and the guest sees it as `\\tsclient\win11`. `./drive` is mounted into guacd, so files persist on the host instead of dying with the container |
 | Audio | guest → browser (`audio/L16`) |
 | Any device | a phone browser works; no app to install |
 
@@ -503,7 +503,7 @@ RustDesk is a TeamViewer-class tool, not an RDP gateway.
 | Web UI | `GET /guacamole/` → **200** (tested on loopback and from the LAN) |
 | Schema | `initdb.sql` 795 lines (793 + 2 provenance), all `guacamole_*` tables created |
 | Connection | `win11-rdp` id=1, 13 parameters, granted to guacadmin |
-| Parameters | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, color-depth=32 |
+| Parameters | hostname=host.docker.internal, port=13389, security=nla, ignore-cert=true, resize-method=display-update, enable-drive=true, drive-path=/drive, color-depth=32 |
 | guacd negotiation | `Security mode: NLA`, `Resize method: display-update`, `args` reports `VERSION_1_5_0` |
 | Authentication | empty password → guest `Authentication failure (invalid credentials?)` (path OK, awaiting the real password) |
 | Ports | 8081 HTTP (0.0.0.0, webapp), 4822 guacd (127.0.0.1 only); 8443 only if the optional Caddy overlay is on |

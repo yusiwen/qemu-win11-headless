@@ -21,6 +21,16 @@ services:
     # from the host and prove the RDP leg end-to-end without a browser.
     ports:
       - "127.0.0.1:4822:4822"
+    volumes:
+      # Backend for RDP drive redirection. The connection's drive-path must name
+      # a directory *inside this container*; without drive-path the drive is
+      # never created even though enable-drive=true (measured: the guest showed
+      # only C:/D:/E: and \\tsclient did not resolve).
+      #
+      # guacd runs as uid 1000 here, so this host directory must be writable by
+      # 1000:1000. Files uploaded from the browser land here and appear in the
+      # guest as \\tsclient\<drive-name>.
+      - ./drive:/drive
     networks: [guacnet]
 
   postgres:

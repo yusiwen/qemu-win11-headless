@@ -120,8 +120,15 @@ def connection_payload(env):
             "enable-font-smoothing": "true",
             "enable-desktop-composition": "true",
             # --- clipboard works by default; drive = file transfer --------
+            # drive-path is REQUIRED: with it, guacd backs the drive with a
+            # directory inside the guacd container and the guest sees
+            # \\tsclient\win11. Without it, enable-drive silently does nothing
+            # (measured: the guest listed only C:/D:/E:).
+            # Text goes over the clipboard; images do NOT (RDP clipboard support
+            # in guacd is text-only), so a screenshot has to travel as a file.
             "enable-drive": "true",
             "drive-name": "win11",
+            "drive-path": "/drive",
             "create-drive-path": "true",
         },
         "attributes": {
